@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 import charts
+import chat
 import engine_audio
 import f1_predict as f1
 
@@ -206,6 +207,11 @@ with st.sidebar:
                  type="primary" if ss.race == dash_key else "secondary"):
         ss.race = dash_key
         st.rerun()
+    chat_key = (season, "chat")
+    if st.button("💬 Ask LightsToFlag", key="nav_chat", width="stretch",
+                 type="primary" if ss.race == chat_key else "secondary"):
+        ss.race = chat_key
+        st.rerun()
     upcoming = sched[~sched["round"].isin(done_rounds)].sort_values("round")
     completed = sched[sched["round"].isin(done_rounds)].sort_values("round", ascending=False)
 
@@ -248,7 +254,28 @@ with st.sidebar:
 df = f1.build_features(hist)
 df_key = (tuple(train_seasons), len(df), ss.refresh)
 sel_season, sel_round = ss.race
-race_meta = sched[sched["round"] == sel_round].iloc[0] if sel_round != "dash" else None
+race_meta = (sched[sched["round"] == sel_round].iloc[0]
+             if sel_round not in ("dash", "chat") else None)
+
+
+def next_race_prediction():
+    """Prediction table for the next race at the official/estimated grid (no what-if edits)."""
+    model, noise = train(df_key, df)
+    rows = f1.next_race_rows(hist, info, quali_grid)
+    rows["Driver"], rows["Team"] = name_col(rows), team_col(rows)
+    scores = model.predict(rows[f1.FEATURES])
+    p_win, p_pod, p_pts = simulate(scores, noise)
+    out = rows.assign(score=scores, win=p_win * 100, podium=p_pod * 100, top10=p_pts * 100)
+    out = out.sort_values("score").reset_index(drop=True)
+    out["Pos"] = np.arange(1, len(out) + 1)
+    return out, rows["grid_source"].iloc[0]
+
+
+def secret(name):
+    try:
+        return st.secrets[name]
+    except Exception:
+        return os.environ.get(name, "")
 
 
 def header(meta, subtitle):
@@ -279,9 +306,73 @@ def team_col(frame):
 
 
 # --------------------------------------------------------------------------- #
+# Chat
+# --------------------------------------------------------------------------- #
+if sel_round == "chat":
+    st.title("💬 Ask LightsToFlag")
+    st.caption("Ask about the next-race prediction, this season's results, standings or the model. "
+               "Answers come only from the data in this app.")
+
+    with st.expander("Chat settings", expanded=False):
+        local = chat.ollama_models()
+        backends = list(chat.CLAUDE_MODELS) + [f"Ollama · {m} (local, free)" for m in local]
+        backend = st.selectbox("Model", backends, key="chat_backend")
+        api_key = secret("ANTHROPIC_API_KEY")
+        if backend in chat.CLAUDE_MODELS and not api_key:
+            api_key = st.text_input("Anthropic API key", type="password",
+                                    help="Kept only for this browser session. To avoid typing it, put "
+                                         "ANTHROPIC_API_KEY in .streamlit/secrets.toml.")
+        if not local:
+            st.caption("Tip: install Ollama and run `ollama pull llama3.1` for a free local model.")
+        if st.button("Clear conversation"):
+            ss.chat = []
+            st.rerun()
+
+    ss.setdefault("chat", [])
+    pred, gsrc = (next_race_prediction() if season == info["season"] else (None, ""))
+    bt = run_backtest(df_key + (n_backtest,), df, n_backtest) if n_backtest else None
+    context = chat.build_context(info, pred, season_hist, bt, gsrc)
+
+    for m in ss.chat:
+        with st.chat_message(m["role"], avatar="🏁" if m["role"] == "assistant" else None):
+            st.markdown(m["content"])
+
+    prompt = st.chat_input("Ask about the race, drivers, teams or the model...")
+    if not ss.chat and not prompt:
+        st.caption("Try one of these:")
+        cols = st.columns(2)
+        for i, q in enumerate(chat.SUGGESTIONS):
+            if cols[i % 2].button(q, key=f"sugg{i}", width="stretch"):
+                prompt = q
+
+    if prompt:
+        ss.chat.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        with st.chat_message("assistant", avatar="🏁"):
+            try:
+                if backend in chat.CLAUDE_MODELS:
+                    if not api_key:
+                        st.warning("Add your Anthropic API key in **Chat settings**, "
+                                   "or pick a local Ollama model.")
+                        ss.chat.pop()
+                        st.stop()
+                    gen = chat.stream_claude(ss.chat, context, chat.CLAUDE_MODELS[backend], api_key)
+                else:
+                    gen = chat.stream_ollama(ss.chat, context, backend.split(" · ")[1].split(" (")[0])
+                reply = st.write_stream(gen)
+            except Exception as e:
+                reply = None
+                st.error(f"The chat model didn't respond: {e}")
+                ss.chat.pop()
+        if reply:
+            ss.chat.append({"role": "assistant", "content": reply})
+            st.rerun()
+
+# --------------------------------------------------------------------------- #
 # Season dashboard
 # --------------------------------------------------------------------------- #
-if sel_round == "dash":
+elif sel_round == "dash":
     st.title(f"📊 {season} season dashboard")
     if season_hist.empty:
         st.info("No races completed yet this season.")

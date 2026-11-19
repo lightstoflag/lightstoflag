@@ -14,3 +14,7 @@ sounds/
 .DS_Store
 .vscode/
 .idea/
+
+# API keys
+.streamlit/secrets.toml
+.env

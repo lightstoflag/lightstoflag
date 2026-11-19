@@ -12,6 +12,7 @@ A machine-learning app that predicts the finishing order of the next Formula 1 r
 |---|---|
 | `app.py` | The web app (Streamlit) |
 | `f1_predict.py` | Data download, feature building, model training and back-testing. It also runs on its own from the command line. |
+| `chat.py` | The "Ask LightsToFlag" chat: builds the data context and talks to Claude or Ollama |
 | `charts.py` | Interactive Plotly charts (colour-blind-safe palette) |
 | `engine_audio.py` | Generates the engine sounds in code (no recordings needed) |
 | `assets/` | Logo files (sidebar logo for light and dark mode, app icon, favicon) |
@@ -68,6 +69,35 @@ Click **📊 Season dashboard** at the top of the race list.
 - **Every result this season:** a grid of drivers × races. Darker squares are better finishes and grey squares are DNFs. You can spot hot streaks and bad weekends at a glance.
 - **Constructors:** total points per team.
 - **Standings:** points, wins and podiums for every driver.
+
+### 💬 Ask LightsToFlag (chat)
+
+Click **💬 Ask LightsToFlag** in the race list and ask questions in plain English, for example:
+- *Who's most likely to win, and why?*
+- *Who could surprise from further back?*
+- *How has Verstappen done in the last 5 races?*
+- *Which team has the most DNFs?*
+
+**What it knows:**
+- the next-race prediction, with win, podium and top-10 chances
+- this season's results, driver and constructor standings, and DNFs
+- the model's track record
+
+It's told to answer only from that data, so it will say when it doesn't know something, like weather or news.
+
+**Choose a model** under *Chat settings*:
+
+| Option | Cost | Setup |
+|---|---|---|
+| Claude Haiku 5.5 (default) | Fractions of a cent per question | Needs an Anthropic API key |
+| Claude Sonnet 5.5 | A little more, smarter answers | Needs an Anthropic API key |
+| Ollama (any local model) | Free, runs on your computer | `ollama pull llama3.1`, with Ollama running |
+
+To avoid pasting your API key each time, create `.streamlit/secrets.toml` next to `app.py`:
+```toml
+ANTHROPIC_API_KEY = "sk-ant-..."
+```
+`.streamlit/secrets.toml` is already in `.gitignore`, so your key never gets pushed to GitHub.
 
 ### Next race: prediction view
 
