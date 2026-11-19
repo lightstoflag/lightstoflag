@@ -22,7 +22,8 @@ import time
 import numpy as np
 import pandas as pd
 import requests
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.inspection import permutation_importance
 
 API = "https://api.jolpi.ca/ergast/f1"
 CACHE_DIR = "f1_cache"
@@ -39,6 +40,12 @@ FEATURES = [
     "drv_track_avg_finish",
     "drv_season_points",
     "races_in_season",
+    # added after tuning on 2022-2026 results
+    "drv_avg_gain_5",
+    "drv_last_finish",
+    "drv_avg_finish_season",
+    "grid_vs_teammate",
+    "team_dnf_rate_10",
 ]
 
 
@@ -185,7 +192,39 @@ def build_features(df):
     df["team_avg_finish_5"] = df["team_avg_finish_5"].fillna(df["drv_avg_finish_5"])
     df["team_avg_grid_5"] = df["team_avg_grid_5"].fillna(df["drv_avg_grid_5"])
     df["drv_track_avg_finish"] = df["drv_track_avg_finish"].fillna(df["drv_avg_finish_5"])
+
+    # Race craft: average places gained from grid when finishing (last 5)
+    gain = (df["grid"] - df["finish"]).where(df["dnf"] == 0)
+    df["drv_avg_gain_5"] = (gain.groupby(df["driver"])
+                              .transform(lambda s: s.shift(1).rolling(5, min_periods=1).mean())).fillna(0)
+    df["drv_last_finish"] = df.groupby("driver")["finish"].shift(1).fillna(12)
+    df["drv_avg_finish_season"] = (df.groupby(["season", "driver"])["finish"]
+                                     .transform(lambda s: s.shift(1).expanding().mean())
+                                     ).fillna(df["drv_avg_finish_5"])
+    team_dnf = (df.groupby(["season", "team", "race_idx"])["dnf"].mean().reset_index()
+                  .sort_values("race_idx"))
+    team_dnf["team_dnf_rate_10"] = team_dnf.groupby(["season", "team"])["dnf"].transform(
+        lambda s: s.shift(1).rolling(10, min_periods=1).mean())
+    df = df.merge(team_dnf[["season", "team", "race_idx", "team_dnf_rate_10"]],
+                  on=["season", "team", "race_idx"], how="left")
+    df["team_dnf_rate_10"] = df["team_dnf_rate_10"].fillna(0.1)
+    return add_grid_features(df)
+
+
+def add_grid_features(df):
+    """Features that depend on this race's grid. Re-run after the grid changes (what-if edits)."""
+    df = df.copy()
+    key = ["season", "round", "team"]
+    total = df.groupby(key)["grid"].transform("sum")
+    count = df.groupby(key)["grid"].transform("count")
+    mate = (total - df["grid"]) / (count - 1).clip(lower=1)
+    df["grid_vs_teammate"] = np.where(count > 1, df["grid"] - mate, 0.0)
     return df
+
+
+def training_rows(df):
+    """DNFs are mostly bad luck (crashes, failures) and only add noise to the finishing-order target."""
+    return df[df["dnf"] == 0]
 
 
 def next_race_rows(hist, info, grid):
@@ -214,15 +253,30 @@ def next_race_rows(hist, info, grid):
         rows["grid"] = est.rank(method="first")
         rows["grid_source"] = "estimated"
     rows["grid"] = rows["grid"].fillna(20)
-    return rows
+    return add_grid_features(rows)
 
 
 # --------------------------------------------------------------------------- #
 # Modelling
 # --------------------------------------------------------------------------- #
 def make_model():
-    return GradientBoostingRegressor(n_estimators=300, max_depth=3,
-                                     learning_rate=0.05, subsample=0.8, random_state=42)
+    # Chosen by walk-forward tuning on 2025-26 races (see README "Model tuning")
+    return HistGradientBoostingRegressor(max_iter=200, max_depth=3, learning_rate=0.03,
+                                         min_samples_leaf=40, random_state=42)
+
+
+def fit_model(df):
+    tr = training_rows(df)
+    return make_model().fit(tr[FEATURES], tr["finish"], sample_weight=sample_weights(tr))
+
+
+def importances(model, df, n=600):
+    """Permutation importance: how much accuracy drops when each input is shuffled."""
+    tr = training_rows(df)
+    tr = tr.tail(n)
+    r = permutation_importance(model, tr[FEATURES], tr["finish"], n_repeats=3, random_state=0)
+    imp = pd.Series(np.clip(r.importances_mean, 0, None), index=FEATURES)
+    return imp / imp.sum() if imp.sum() > 0 else imp
 
 
 def sample_weights(df):
@@ -239,7 +293,7 @@ def backtest(df, n_races=8):
     for _, (s, r) in tests.iterrows():
         before = (df["season"] < s) | ((df["season"] == s) & (df["round"] < r))
         train, test = df[before], df[(df["season"] == s) & (df["round"] == r)].copy()
-        model = make_model().fit(train[FEATURES], train["finish"], sample_weight=sample_weights(train))
+        model = fit_model(train)
         test["pred"] = model.predict(test[FEATURES])
         test["pred_rank"] = test["pred"].rank(method="first")
         winners_hit += int(test.loc[test["pred_rank"] == 1, "finish"].iloc[0] == 1)
@@ -260,14 +314,13 @@ def backtest(df, n_races=8):
 
 
 def predict(df, rows):
-    model = make_model().fit(df[FEATURES], df["finish"], sample_weight=sample_weights(df))
+    model = fit_model(df)
     rows = rows.copy()
     rows["pred_score"] = model.predict(rows[FEATURES])
     rows = rows.sort_values("pred_score").reset_index(drop=True)
     rows["predicted_pos"] = np.arange(1, len(rows) + 1)
 
-    importances = pd.Series(model.feature_importances_, index=FEATURES).sort_values(ascending=False)
-    return rows, importances
+    return rows, importances(model, df).sort_values(ascending=False)
 
 
 # --------------------------------------------------------------------------- #

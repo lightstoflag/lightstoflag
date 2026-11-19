@@ -116,10 +116,15 @@ def load_next_race(refresh_token):
 
 @st.cache_resource(show_spinner="Training model...")
 def train(df_key, _df):
-    model = f1.make_model().fit(_df[f1.FEATURES], _df["finish"],
-                                sample_weight=f1.sample_weights(_df))
-    resid = _df["finish"] - model.predict(_df[f1.FEATURES])
+    model = f1.fit_model(_df)
+    tr = f1.training_rows(_df)
+    resid = tr["finish"] - model.predict(tr[f1.FEATURES])
     return model, float(resid.std() * 1.15)
+
+
+@st.cache_data(show_spinner="Measuring what the model relies on...")
+def model_importances(df_key, _model, _df):
+    return f1.importances(_model, _df)
 
 
 @st.cache_data(show_spinner="Asking the model what it would have said...")
@@ -129,8 +134,7 @@ def hindsight(df_key, _df, season, rnd):
     train_df = _df[before]
     if train_df[["season", "round"]].drop_duplicates().shape[0] < 5:
         return None
-    model = f1.make_model().fit(train_df[f1.FEATURES], train_df["finish"],
-                                sample_weight=f1.sample_weights(train_df))
+    model = f1.fit_model(train_df)
     race = _df[(_df["season"] == season) & (_df["round"] == rnd)].copy()
     race["model_pos"] = model.predict(race[f1.FEATURES]).argsort().argsort() + 1
     return race.set_index("driver")["model_pos"]
@@ -398,6 +402,7 @@ elif (sel_season, sel_round) == next_key:
                 st.rerun()
 
         rows = base_rows.drop(columns="grid").merge(edited[["driver", "grid"]], on="driver")
+        rows = f1.add_grid_features(rows)
         scores = model.predict(rows[f1.FEATURES])
         p_win, p_pod, p_pts = simulate(scores, noise)
         out = rows.assign(score=scores, win=p_win * 100, podium=p_pod * 100, top10=p_pts * 100)
@@ -449,7 +454,7 @@ elif (sel_season, sel_round) == next_key:
             st.caption("Walk-forward: each past race is predicted using only data from before it.")
             st.plotly_chart(charts.backtest_chart(bt["per_race"], DARK), **PLOT)
         st.subheader("What the model leans on")
-        st.plotly_chart(charts.feature_importance(model, f1.FEATURES, DARK), **PLOT)
+        st.plotly_chart(charts.feature_importance(model_importances(df_key, model, df), DARK), **PLOT)
     with tab_drv:
         driver_form(out, info["circuit"])
 

@@ -85,7 +85,7 @@ Click **📊 Season dashboard** at the top of the race list.
 
 **Model accuracy tab**
 - A per-race chart of the back-test, with ✓ on races where the model picked the winner.
-- Back-test scores: how often the model picked the winner, how many podium finishers it got right, and its average position error over recent races.
+- Back-test scores (tuned model: about 70% winners, 73% podium finishers over the last 30 races): how often the model picked the winner, how many podium finishers it got right, and its average position error over recent races.
 - Which inputs the model relies on most.
 
 **Driver form tab**
@@ -125,19 +125,41 @@ python3 f1_predict.py --backtest 0             # skip the back-test
 
 ## How the model works
 
-- **Data:** race results and qualifying for each season, from the Jolpica (Ergast-compatible) API.
+- **Data:** race results and starting grids for each season, from the Jolpica (Ergast-compatible) API.
 - **Inputs for each driver:**
-  - grid position
-  - average finish, grid and points over their last 5 races
-  - DNF rate over their last 10 races
-  - team's average finish and grid over its last 5 races (current season only)
-  - the driver's past average finish at this track
-  - season points so far
+  - starting grid position, and grid position compared with their teammate
+  - recent form: average finish, grid and points over their last 5 races, last race result, season-average finish, and average places gained from the grid
+  - reliability: the driver's DNF rate (last 10 races) and the team's DNF rate
+  - team form: the team's average finish and grid over its last 5 races (current season only)
+  - the driver's past results at this track, and season points so far
 - **No peeking ahead:** every input only uses races that happened before the one being predicted.
-- **Model:** scikit-learn gradient boosting that predicts a finishing position, trained with more weight on recent seasons.
+- **Model:** scikit-learn `HistGradientBoostingRegressor` (200 trees, depth 3, learning rate 0.03, at least 40 results per leaf). It predicts a finishing position and is trained with more weight on recent seasons.
+- **DNFs are left out of training.** Crashes and failures are mostly bad luck. Leaving them in taught the model to expect random retirements and made the finishing order worse.
 - **Chances:** each driver's predicted score gets random noise the size of the model's typical error. Running that 5,000 times gives the win, podium and top-10 percentages.
 
----
+## Model tuning
+
+The model was tuned on real 2022–2026 results using **walk-forward testing**: each race is predicted using only data from before it.
+- **Selection:** 20 races (2025 R15 – 2026 R10) were used to choose settings.
+- **Final check:** 10 more races (2026 R11–R20) were held back until the end.
+
+Results on the 10 held-back races:
+
+| Model | Winner correct | Podium overlap | Rank correlation | Avg position error |
+|---|---|---|---|---|
+| Grid order only (no ML) | 7/10 | 60% | 0.73 | 2.7 |
+| Original model | 6/10 | 50% | 0.79 | 2.5 |
+| **Tuned model** | **6/10** | **83%** | **0.84** | **2.1** |
+
+- **Rank correlation** measures how well the predicted order matches the real order, from 1.0 for perfect down to 0 for random.
+- **Avg position error** is measured among drivers who finished.
+
+**What changed:**
+- **Algorithm:** gradient boosting was switched to HistGradientBoosting, with shallower, more regularised trees.
+- **Training data:** DNF rows were dropped from training.
+- **Inputs:** five new ones were added: places gained, last finish, season average, grid vs teammate, and team DNF rate.
+
+**Honest note:** picking the *winner* is still about as good as "the pole-sitter wins". In 2025–26, pole won about 70% of races, and no results-only model beats that by much. The tuned model's gains are in the rest of the order. Adding practice pace and qualifying lap-time gaps (e.g. via [FastF1](https://github.com/theOehrly/Fast-F1)) is the next step for improving winner picks.
 
 ## Custom sounds
 

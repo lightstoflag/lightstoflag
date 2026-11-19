@@ -193,14 +193,17 @@ def driver_form(h, dark=False):
     return _layout(fig, dark, 380, hovermode="x unified")
 
 
-def feature_importance(model, features, dark=False):
-    imp = pd.Series(model.feature_importances_, index=features).sort_values()
+def feature_importance(imp, dark=False):
+    imp = imp.sort_values()
     labels = {
         "grid": "Grid position", "drv_avg_finish_5": "Driver avg finish (5)",
         "drv_avg_grid_5": "Driver avg grid (5)", "drv_avg_points_5": "Driver avg points (5)",
         "drv_dnf_rate_10": "Driver DNF rate (10)", "team_avg_finish_5": "Team avg finish (5)",
         "team_avg_grid_5": "Team avg grid (5)", "drv_track_avg_finish": "Driver at this track",
         "drv_season_points": "Season points", "races_in_season": "Races this season",
+        "drv_avg_gain_5": "Places gained (5)", "drv_last_finish": "Last race finish",
+        "drv_avg_finish_season": "Season avg finish", "grid_vs_teammate": "Grid vs teammate",
+        "team_dnf_rate_10": "Team DNF rate (10)",
     }
     fig = go.Figure(go.Bar(
         x=imp.values * 100, y=[labels.get(i, i) for i in imp.index], orientation="h",
