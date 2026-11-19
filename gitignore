@@ -1,0 +1,16 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Downloaded race data (re-created on first run)
+f1_cache/
+
+# Your own sound recordings (may be copyrighted)
+sounds/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
