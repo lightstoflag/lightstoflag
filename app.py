@@ -120,7 +120,7 @@ def train(df_key, _df):
     model = f1.fit_model(_df)
     tr = f1.training_rows(_df)
     resid = tr["finish"] - model.predict(tr[f1.FEATURES])
-    return model, float(resid.std() * 1.15)
+    return model, float(resid.std() * 0.75)
 
 
 @st.cache_data(show_spinner="Measuring what the model relies on...")
