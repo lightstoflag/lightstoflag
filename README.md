@@ -102,7 +102,13 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 ### Next race: prediction view
 
 **Prediction tab**
-- **Starting grid** (left): the official qualifying order if it's out, otherwise an estimate from recent form. The page header tells you which one you're looking at.
+- **🚩 Grid penalties** (top left): the free data only has the **qualifying order**, not the real starting grid. Penalties such as engine changes or impeding aren't included until after the race. Check race-day news and add each one here:
+  - **Drop places**, e.g. "Piastri −10"
+  - **Back of grid**
+  - **Pit-lane start**
+
+  The app rebuilds the grid (everyone else moves up to fill the gaps) and re-predicts. The page header shows whether penalties have been applied. Penalties last for your browser session and apply to the chat page too.
+- **Starting grid** (left): the qualifying order with your penalties applied, or an estimate from recent form before qualifying.
   - ✏️ **What-if mode:** edit any grid number to try a scenario, such as a 5-place penalty or a driver starting from the pit lane (set them to 20). The prediction updates right away. **Reset grid** puts the original back.
 - **Predicted result** (right):
   - The predicted top three, each with their chance of winning.
@@ -135,7 +141,8 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 
 ## Tips for better predictions
 
-1. **Run it after qualifying.** Starting grid position is by far the strongest signal (about 70%+ of what the model uses). Before qualifying, the grid is only a guess.
+1. **Run it after qualifying, then add penalties on race day.** Starting grid position is by far the strongest signal (about 70%+ of what the model uses). In Las Vegas 2026, Piastri qualified 7th but started 17th after a penalty, and the prediction missed it because the penalty wasn't entered.
+   - **Limitation:** when a front-runner gets a big penalty, the model can be too optimistic about how far they'll climb. That situation is rare in the training data. Treat those predictions with extra caution.
 2. Click **Re-download data** in Settings to pick up new qualifying or race results. The app only checks the API about every 15 minutes on its own.
 3. **Keep training seasons recent.** The 2026 rule changes reshuffled the field, so older seasons say less about today's cars. The model already counts recent seasons more.
 4. **Expect about 50% on picking the winner.** Crashes, safety cars, weather and strategy make F1 noisy. Use the win and podium percentages instead of treating the order as certain.

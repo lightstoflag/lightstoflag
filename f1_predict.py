@@ -223,6 +223,37 @@ def add_grid_features(df):
     return df
 
 
+def apply_penalties(quali_order, penalties):
+    """Turn qualifying order + grid penalties into a starting grid.
+
+    quali_order: driver ids, pole-sitter first.
+    penalties:   list of dicts like
+                 {"driver": "piastri", "kind": "places", "places": 10}
+                 {"driver": "sainz",   "kind": "back"}      # back of the grid
+                 {"driver": "albon",   "kind": "pitlane"}   # starts from the pit lane
+    Returns {driver_id: grid_position}.
+
+    Simplified version of the FIA procedure:
+      1. Drivers without a back-of-grid or pit-lane penalty form the grid in qualifying order.
+      2. Place penalties are applied one at a time, in qualifying order: the driver is
+         removed and re-inserted N places below where they qualified (never past the end).
+      3. Back-of-grid drivers line up behind them, then pit-lane starters, each group in
+         qualifying order.
+    """
+    pens = {p["driver"]: p for p in penalties if p["driver"] in quali_order}
+    back = [d for d in quali_order if pens.get(d, {}).get("kind") == "back"]
+    pit = [d for d in quali_order if pens.get(d, {}).get("kind") == "pitlane"]
+    movers = [d for d in quali_order if pens.get(d, {}).get("kind") == "places"]
+
+    grid = [d for d in quali_order if d not in pens]          # untouched drivers
+    for d in movers:                                          # in qualifying order
+        target = quali_order.index(d) + int(pens[d].get("places", 0))
+        grid.insert(min(target, len(grid)), d)
+
+    final = grid + back + pit
+    return {d: i + 1 for i, d in enumerate(final)}
+
+
 def training_rows(df):
     """DNFs are mostly bad luck (crashes, failures) and only add noise to the finishing-order target."""
     return df[df["dnf"] == 0]

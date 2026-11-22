@@ -258,10 +258,26 @@ race_meta = (sched[sched["round"] == sel_round].iloc[0]
              if sel_round not in ("dash", "chat") else None)
 
 
+def race_penalties():
+    """Grid penalties the user entered for the next race (kept for this browser session)."""
+    return ss.setdefault("penalties", {}).setdefault((info["season"], info["round"]), [])
+
+
+def penalised_rows(rows):
+    """Re-order the qualifying grid using the entered penalties."""
+    pens = race_penalties()
+    if not pens:
+        return rows
+    order = rows.sort_values("grid")["driver"].tolist()
+    new_grid = f1.apply_penalties(order, pens)
+    rows = rows.assign(grid=rows["driver"].map(new_grid))
+    return f1.add_grid_features(rows)
+
+
 def next_race_prediction():
-    """Prediction table for the next race at the official/estimated grid (no what-if edits)."""
+    """Prediction table for the next race at the qualifying/estimated grid plus any penalties."""
     model, noise = train(df_key, df)
-    rows = f1.next_race_rows(hist, info, quali_grid)
+    rows = penalised_rows(f1.next_race_rows(hist, info, quali_grid))
     rows["Driver"], rows["Team"] = name_col(rows), team_col(rows)
     scores = model.predict(rows[f1.FEATURES])
     p_win, p_pod, p_pts = simulate(scores, noise)
@@ -464,17 +480,50 @@ elif sel_round in done_rounds:
 # --------------------------------------------------------------------------- #
 elif (sel_season, sel_round) == next_key:
     model, noise = train(df_key, df)
-    base_rows = f1.next_race_rows(hist, info, quali_grid)
+    quali_rows = f1.next_race_rows(hist, info, quali_grid)
+    pens = race_penalties()
+    base_rows = penalised_rows(quali_rows)
     base_rows["Driver"], base_rows["Team"] = name_col(base_rows), team_col(base_rows)
     base_rows["label"] = base_rows["Driver"]
     src = base_rows["grid_source"].iloc[0]
-    header(race_meta, "Grid: **official qualifying**" if src == "qualifying"
-           else "Grid: **estimated** (qualifying not published yet)")
+    if src != "qualifying":
+        grid_note = "Grid: **estimated** (qualifying not published yet)"
+    elif pens:
+        grid_note = f"Grid: **qualifying + {len(pens)} penalt{'y' if len(pens) == 1 else 'ies'}**"
+    else:
+        grid_note = "Grid: **qualifying order** · penalties not applied yet"
+    header(race_meta, grid_note)
 
     tab_pred, tab_model, tab_drv = st.tabs(["Prediction", "Model accuracy", "Driver form"])
     with tab_pred:
         left, right = st.columns([2, 3])
         with left:
+            with st.expander(f"🚩 Grid penalties ({len(pens)})", expanded=bool(pens)):
+                st.caption("The free data only has the qualifying order. Check race-day news "
+                           "for penalties (engine changes, impeding...) and add them here.")
+                names = quali_rows.assign(Driver=name_col(quali_rows)).sort_values("grid")
+                label_of = dict(zip(names["driver"], names["Driver"]))
+                taken = {p["driver"] for p in pens}
+                choices = [d for d in names["driver"] if d not in taken]
+                pc1, pc2 = st.columns([3, 2])
+                who = pc1.selectbox("Driver", choices, format_func=label_of.get, key="pen_driver")
+                kind = pc2.selectbox("Penalty", ["places", "back", "pitlane"], key="pen_kind",
+                                     format_func={"places": "Drop places", "back": "Back of grid",
+                                                  "pitlane": "Pit-lane start"}.get)
+                places = (st.number_input("Places", 1, 25, 5, key="pen_places")
+                          if kind == "places" else 0)
+                if st.button("Add penalty", width="stretch", disabled=not choices):
+                    pens.append({"driver": who, "kind": kind, "places": int(places)})
+                    st.rerun()
+                for i, p in enumerate(pens):
+                    what = (f"−{p['places']} places" if p["kind"] == "places"
+                            else "back of grid" if p["kind"] == "back" else "pit-lane start")
+                    pl1, pl2 = st.columns([5, 1])
+                    pl1.markdown(f"{label_of.get(p['driver'], p['driver'])}: **{what}**")
+                    if pl2.button("✕", key=f"pen_del_{i}"):
+                        pens.pop(i)
+                        st.rerun()
+
             st.subheader("Starting grid")
             st.caption("Edit a grid slot to try a what-if (e.g. a grid penalty).")
             grid_df = (base_rows[["driver", "Driver", "Team", "grid"]]
@@ -488,10 +537,10 @@ elif (sel_season, sel_round) == next_key:
                     "Team": st.column_config.TextColumn(disabled=True),
                     "grid": st.column_config.NumberColumn("Grid", min_value=1, max_value=22, step=1),
                 },
-                hide_index=True, width="stretch", key="grid_editor", height=740,
+                hide_index=True, width="stretch", key=f"grid_editor_{hash(str(pens))}", height=740,
             )
             if st.button("Reset grid"):
-                ss.pop("grid_editor", None)
+                ss.pop(f"grid_editor_{hash(str(pens))}", None)
                 st.rerun()
 
         rows = base_rows.drop(columns="grid").merge(edited[["driver", "grid"]], on="driver")
