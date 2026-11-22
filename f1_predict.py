@@ -219,6 +219,7 @@ def add_grid_features(df):
     count = df.groupby(key)["grid"].transform("count")
     mate = (total - df["grid"]) / (count - 1).clip(lower=1)
     df["grid_vs_teammate"] = np.where(count > 1, df["grid"] - mate, 0.0)
+    df["out_of_position"] =  df["grid"] - df["team_avg_grid_5"]
     return df
 
 

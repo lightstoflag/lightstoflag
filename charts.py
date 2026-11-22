@@ -204,6 +204,7 @@ def feature_importance(imp, dark=False):
         "drv_avg_gain_5": "Places gained (5)", "drv_last_finish": "Last race finish",
         "drv_avg_finish_season": "Season avg finish", "grid_vs_teammate": "Grid vs teammate",
         "team_dnf_rate_10": "Team DNF rate (10)",
+        "out_of_position": "Out of position"
     }
     fig = go.Figure(go.Bar(
         x=imp.values * 100, y=[labels.get(i, i) for i in imp.index], orientation="h",

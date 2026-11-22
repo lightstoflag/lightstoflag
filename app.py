@@ -449,7 +449,9 @@ elif sel_round in done_rounds:
             finished = race[race["dnf"] == 0]
             st.plotly_chart(charts.position_shift(finished, src_col, "finish", src_label,
                                                   "Finish", DARK), **PLOT)
-            st.caption("Blue = gained places, red = lost. DNFs not shown.")
+            st.caption("Blue = beat the prediction, red = fell short. DNFs not shown."
+                       if mode == "Model → Finish"
+                       else "Blue = gained places, red = lost. DNFs not shown.")
         with table_col:
             st.dataframe(race[show], hide_index=True, width="stretch", height=740,
                          column_config={"grid": "Grid", "points": "Pts", "status": "Status",

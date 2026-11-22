@@ -16,7 +16,6 @@ import pandas as pd
 from scipy.stats import spearmanr
 
 import f1_predict as f1
-import lightgbm as lgb
 
 SEASONS = range(2022, 2027)
 N_TUNE, N_TEST = 20, 10          # last 30 races: first 20 to tune on, last 10 locked away
@@ -26,25 +25,13 @@ N_TUNE, N_TEST = 20, 10          # last 30 races: first 20 to tune on, last 10 l
 # ✏️  CHALLENGE 2: change how a race is scored (lower score = better finish)
 # --------------------------------------------------------------------------- #
 def my_scores(train, race):
-    tr = f1.training_rows(train).sort_values(["season", "round"])
-    groups = tr.groupby(["season", "round"], sort=False).size().values
-    labels = (11 - tr["finish"]).clip(lower=0).astype(int)
-    model = lgb.LGBMRanker(n_estimators=200, learning_rate=0.03,
-                           num_leaves=7, min_child_samples=40,
-                           label_gain=list(range(11)), verbose=-1)
-    model.fit(tr[f1.FEATURES], labels, group=groups)
-
-    ranker_scores = -model.predict(race[f1.FEATURES])
-    original_scores = f1.fit_model(train).predict(race[f1.FEATURES])
-    r1 = pd.Series(ranker_scores).rank()
-    r2 = pd.Series(original_scores).rank()
-    return ((r1 + r2) / 2).values
+    return f1.fit_model(train).predict(race[f1.FEATURES])
 
 
 # --------------------------------------------------------------------------- #
 # ✏️  CHALLENGE 1: turn scores into win / podium probabilities
 # --------------------------------------------------------------------------- #
-NOISE_MULT = 1.15   # the app's current guess: residual std x 1.15
+NOISE_MULT = 0.75   # the app's current guess: residual std x 0.75
 
 
 def my_probabilities(train, race, scores, n_sims=5000, seed=7):
