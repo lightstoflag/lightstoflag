@@ -15,6 +15,7 @@ A machine-learning app that predicts the finishing order of the next Formula 1 r
 | `chat.py` | The "Ask LightsToFlag" chat: builds the data context and talks to Claude or Ollama |
 | `charts.py` | Interactive Plotly charts (colour-blind-safe palette) |
 | `engine_audio.py` | Generates the engine sounds in code (no recordings needed) |
+| `tests/` | Automated test suite (see [Running the tests](#running-the-tests)) |
 | `assets/` | Logo files (sidebar logo for light and dark mode, app icon, favicon) |
 | `f1_cache/` | Created on first run. Saved race data, so later runs are fast. |
 | `sounds/` | *Optional.* Put your own engine recordings here (see [Custom sounds](#custom-sounds)). |
@@ -197,6 +198,28 @@ Results on the 10 held-back races:
 - **Inputs:** five new ones were added: places gained, last finish, season average, grid vs teammate, and team DNF rate.
 
 **Honest note:** picking the *winner* is still about as good as "the pole-sitter wins". In 2025–26, pole won about 70% of races, and no results-only model beats that by much. The tuned model's gains are in the rest of the order. Adding practice pace and qualifying lap-time gaps (e.g. via [FastF1](https://github.com/theOehrly/Fast-F1)) is the next step for improving winner picks.
+
+## Running the tests
+
+The `tests/` folder has an automated test suite. It runs **offline**: the F1 API is replaced with small, made-up data, so results are the same every time.
+
+```bash
+pip install -r requirements-dev.txt
+pytest                    # everything, about 15 seconds
+pytest -m "not slow"      # skip the end-to-end app tests
+pytest tests/test_penalties.py -v   # one file, with each test's name
+```
+
+| File | What it checks |
+|---|---|
+| `test_penalties.py` | Grid penalties: place drops, back of grid, pit lane, several at once, the Vegas/Piastri case |
+| `test_features.py` | **No data leakage:** changing a race's result never changes the inputs for that race or earlier ones. Also rookie defaults, rolling averages, season points, teammate comparison and next-race grids |
+| `test_data.py` | Parsing API results (DNFs, pit-lane starts), caching, pages split across responses, qualifying, rate-limit retries |
+| `test_model.py` | Training, predictions, importances, and that every walk-forward back-test trains only on earlier races |
+| `test_ui_helpers.py` | Every chart builds (light and dark), DNFs are labelled, every input has a readable chart label, sounds are valid WAV files, and the chat context contains the prediction |
+| `test_app.py` | End-to-end: runs the real Streamlit app, opens every page, adds a penalty, plays a sound |
+
+Run the tests before every push. If one fails, it tells you exactly what broke.
 
 ## Custom sounds
 
